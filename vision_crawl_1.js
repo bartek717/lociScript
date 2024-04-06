@@ -141,7 +141,7 @@ async function waitForEvent(page, event) {
 
 (async () => {
   const browser = await puppeteer.launch({
-    headless: "new",
+    headless: false,
   });
 
   const page = await browser.newPage();
@@ -155,79 +155,153 @@ async function waitForEvent(page, event) {
   const messages = [
     {
       role: "system",
-      content: `You are a website crawler. Your task is to respond with the appropriate products that are on the page, as follows:
-            storeName,productName,price
+      content: `You are a website crawler. Your job will be to identify all of the products on a given page, and return the url to them. The links on the website will be highlighted in red in the screenshot. Always read what is in the screenshot. Don't guess link names.
 
-            for each of the products. Respond with this and only this.
+You can go to a specific URL by answering with the following JSON format:
+{"url": "url goes here"}
 
-            `,
+You can click links on the website by referencing the text inside of the link/button, by answering in the following JSON format:
+{"click": "Text in link"}
+
+Ensure that you click on all of the products in order to ensure that you know all of the sizes for each color scheme. Do not ask me if you should click on them, just click on them. Make sure that you only specifiy a single line of text, ex. "Nike Dunk Low Metro"
+        `,
     },
   ];
-  let screenshot_taken = false;
+
   let urls = [
     "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok",
     "https://www.adidas.ca/en/men-shoes",
   ];
-  const images = []
-  const products = [];
-  for (const url of urls) {
-    console.log("Crawling " + url);
-    await page.goto(url, {
-      waitUntil: "domcontentloaded",
-    });
-    await highlight_links(page);
-    const imagesInfo = await extractImagesInfo(page);
-    images.push(...imagesInfo);
-    await Promise.race([waitForEvent(page, "load"), sleep(timeout)]);
-    await highlight_links(page);
-    await page.screenshot({
-      path: "screenshot.jpg",
-      quality: 100,
-    });
 
-    const base64_image = await image_to_base64("screenshot.jpg");
-    messages.push({
-      role: "user",
-      content: [
-        {
-          type: "image_url",
-          image_url: base64_image,
-        },
-        {
-          type: "text",
-          text: "Here's the screenshot of the website you are on right now. ",
-        },
-      ],
-    });
-    screenshot_taken = false;
-  }
-  const response = await openai.chat.completions.create({
-    model: "gpt-4-vision-preview",
-    max_tokens: 1024,
-    messages: messages,
-  });
-  const message = response.choices[0].message;
-  const message_text = message.content;
-  const lines = message_text.split("\n");
-  
-  lines.forEach((line) => {
-    const [company, productName, price] = line.split(",");
-    if (company === "Nike" || company === "Adidas") {
-      let product = {
-        company,
-        productName,
-        price,
-        imageUrl: "",
-      };
-      const matchingImage = images.find((img) => img.alt.trim().toLowerCase() === productName.trim().toLowerCase());
-      if (matchingImage) {
-        product.imageUrl = matchingImage.src;
-        console.log("Matching image");
-        console.log(matchingImage);
+  let screenshot_taken = false;
+  for (const url of urls) {
+    let useUrl = url;
+    while (true) {
+      if (useUrl) {
+        console.log("Crawling " + useUrl);
+        await page.goto(useUrl, {
+          waitUntil: "domcontentloaded",
+        });
+
+        await highlight_links(page);
+
+        await Promise.race([waitForEvent(page, "load"), sleep(timeout)]);
+
+        await highlight_links(page);
+
+        await page.screenshot({
+          path: "screenshot.jpg",
+          quality: 100,
+        });
+
+        screenshot_taken = true;
+        useUrl = null;
       }
-      products.push(product);
+
+      if (screenshot_taken) {
+        const base64_image = await image_to_base64("screenshot.jpg");
+
+        messages.push({
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: base64_image,
+            },
+            {
+              type: "text",
+              text: 'Here\'s the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}.',
+            },
+          ],
+        });
+
+        screenshot_taken = false;
+      }
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4-vision-preview",
+        max_tokens: 1024,
+        messages: messages,
+      });
+
+      const message = response.choices[0].message;
+      const message_text = message.content;
+
+      messages.push({
+        role: "assistant",
+        content: message_text,
+      });
+
+      console.log("GPT: " + message_text);
+
+      if (message_text.indexOf('{"click": "') !== -1) {
+        let parts = message_text.split('{"click": "');
+        parts = parts[1].split('"}');
+        const link_text = parts[0].replace(/[^a-zA-Z0-9 ]/g, "");
+
+        console.log("Clicking on " + link_text);
+
+        try {
+          const elements = await page.$$("[gpt-link-text]");
+          let partial;
+          let exact;
+
+          for (const element of elements) {
+            const attributeValue = await page.evaluate(
+              (el) => el.getAttribute("gpt-link-text"),
+              element
+            );
+
+            if (attributeValue.includes(link_text)) {
+              partial = element;
+            }
+
+            if (attributeValue === link_text) {
+              exact = element;
+            }
+          }
+
+          if (exact || partial) {
+            console.log("Found match for clicking.");
+            const elementToClick = exact || partial;
+            await elementToClick.click();
+      
+            try {
+              await page.waitForNavigation({ waitUntil: "load", timeout: 20000 });
+            } catch (error) {
+              console.error("Navigation failed after clicking:", error);
+            }
+          } else {
+            throw new Error("Can't find link");
+          }
+
+          await Promise.race([waitForEvent(page, "load"), sleep(timeout)]);
+
+          await highlight_links(page);
+
+          await page.screenshot({
+            path: "screenshot.jpg",
+            quality: 100,
+          });
+
+          screenshot_taken = true;
+        } catch (error) {
+          console.log(error);
+
+          messages.push({
+            role: "user",
+            content: "ERROR: I was unable to click that element",
+          });
+        }
+
+        continue;
+      } else if (message_text.indexOf('{"url": "') !== -1) {
+        let parts = message_text.split('{"url": "');
+        parts = parts[1].split('"}');
+        useUrl = parts[0];
+
+        continue;
+      }
     }
-  });
-  await addProductsToSupabase(products);
-  await browser.close();
+  }
 })();
