@@ -11,7 +11,10 @@ const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 puppeteer.use(StealthPlugin());
-const openai = new OpenAI();
+console.log(process.env.OPENAI_API_KEY)
+const openai = new OpenAI({
+  apiKey: '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'
+});
 const timeout = 8000;
 
 async function image_to_base64(image_file) {
@@ -139,6 +142,56 @@ async function waitForEvent(page, event) {
   }, event);
 }
 
+async function getColorways(messages, page){
+  const colorways = await page.$$eval('.colorway-container input[type="radio"]', inputs => inputs.map(input => input.value));
+
+  for (const colorway of colorways) {
+    console.log("Selecting colorway: " + colorway);
+    await page.click(`input[value="${colorway}"]`);
+
+    await page.screenshot({
+      path: "screenshot.jpg",
+      quality: 100,
+    });
+
+    
+    const base64_image = await image_to_base64("screenshot.jpg");
+    messages.push({
+      role: "user",
+      content: [
+        {
+          type: "image_url",
+          image_url: base64_image,
+        },
+        {
+          type: "text",
+          text: 'Here\'s the screenshot of the website you are on right now. Get the sizes of the current product page you are on.  Simply return the numbers like the following example: {3, 4, 7, 11, 11.5, 12.5, 13}',
+        },
+      ],
+    });
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4-vision-preview",
+      max_tokens: 1024,
+      messages: messages,
+    });
+
+    const message = response.choices[0].message;
+    const message_text = message.content;
+    console.log("SIZES FOR THE COLORWAY " + colorway)
+    console.log(message_text)
+
+    setTimeout(() => {
+      console.log("sleep");
+    }, 2000);
+    messages.pop()
+  }
+}
+
+async function click(page, command){
+
+}
+
 (async () => {
   const browser = await puppeteer.launch({
     headless: false,
@@ -155,7 +208,7 @@ async function waitForEvent(page, event) {
   const messages = [
     {
       role: "system",
-      content: `You are a website crawler. Your job will be to identify all of the products on a given page, and return the url to them. The links on the website will be highlighted in red in the screenshot. Always read what is in the screenshot. Don't guess link names.
+      content: `You are a website crawler. Your job will be to identify all of the products on a given page, and return the URL to them. The links on the website will be highlighted in red in the screenshot. Always read what is in the screenshot. Don't guess link names.
 
 You can go to a specific URL by answering with the following JSON format:
 {"url": "url goes here"}
@@ -163,7 +216,10 @@ You can go to a specific URL by answering with the following JSON format:
 You can click links on the website by referencing the text inside of the link/button, by answering in the following JSON format:
 {"click": "Text in link"}
 
-Ensure that you click on all of the products in order to ensure that you know all of the sizes for each color scheme. Do not ask me if you should click on them, just click on them. Make sure that you only specifiy a single line of text, ex. "Nike Dunk Low Metro"
+Ensure that you click on all of the products in order to ensure that you know all of the sizes for each color scheme. Do not ask me if you should click on them, just click on them. Make sure that you only specify a single line of text, ex. "Nike Dunk Low Metro". 
+
+For Nike, once you are on the products screen, click on each colorway. Do this by returning {get_colorways, "currentProductName"}, where "currentProductName" is the current product page we are on.
+Do not click on any size guides.
         `,
     },
   ];
@@ -172,6 +228,8 @@ Ensure that you click on all of the products in order to ensure that you know al
     "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok",
     "https://www.adidas.ca/en/men-shoes",
   ];
+
+  let products_scraped = [];
 
   let screenshot_taken = false;
   for (const url of urls) {
@@ -200,7 +258,7 @@ Ensure that you click on all of the products in order to ensure that you know al
 
       if (screenshot_taken) {
         const base64_image = await image_to_base64("screenshot.jpg");
-
+        let productText = products_scraped.length > 0 ? "You have already scraped the following products: " + products_scraped.join(", ") : "No products have been scraped yet.";
         messages.push({
           role: "user",
           content: [
@@ -210,7 +268,7 @@ Ensure that you click on all of the products in order to ensure that you know al
             },
             {
               type: "text",
-              text: 'Here\'s the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}.',
+              text: `Here's the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}. If you are on a product page and want to traverse the colorwaves to get their sizes, return {get_colorways, "currentProductName"}. ${productText}`,
             },
           ],
         });
@@ -299,6 +357,21 @@ Ensure that you click on all of the products in order to ensure that you know al
         let parts = message_text.split('{"url": "');
         parts = parts[1].split('"}');
         useUrl = parts[0];
+
+        continue;
+      } else if (message_text.indexOf('{get_colorways,') !== -1) {
+        const match = message_text.match(/\{get_colorways, "(.*?)"\}/);
+        if (match && match[1]) {
+          const currentProductName = match[1];
+          console.log("Current Product: " + currentProductName);
+          await getColorways(messages, page);
+          await page.goto(url);
+          products_scraped.push(currentProductName);
+          console.log("Scraped Products: " + products_scraped.join(", "));
+          screenshot_taken = false;  
+        } else {
+          console.log("Error: Product name could not be extracted");
+        }
 
         continue;
       }
