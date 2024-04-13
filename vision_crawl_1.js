@@ -13,7 +13,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 puppeteer.use(StealthPlugin());
 console.log(process.env.OPENAI_API_KEY)
 const openai = new OpenAI({
-  apiKey: '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'
+  apiKey: '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'
 });
 const timeout = 8000;
 
@@ -268,7 +268,7 @@ Do not click on any size guides.
             },
             {
               type: "text",
-              text: `Here's the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}. If you are on a product page and want to traverse the colorwaves to get their sizes, return {get_colorways, "currentProductName"}. ${productText}`,
+              text: `Here's the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}. If you are on a product page and want to traverse the colorwaves to get their sizes, return {get_colorways, "currentProductName"}. ${productText}. Continue to scrape the products you have not scraped yet.`,
             },
           ],
         });
@@ -369,6 +369,7 @@ Do not click on any size guides.
           products_scraped.push(currentProductName);
           console.log("Scraped Products: " + products_scraped.join(", "));
           screenshot_taken = false;  
+          useUrl = url;
         } else {
           console.log("Error: Product name could not be extracted");
         }

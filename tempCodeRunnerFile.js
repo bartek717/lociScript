@@ -1,2 +1,2 @@
 
-console.log(process.env.OPENAI_API_KEY)
+      const message = response.choices[0].message;
