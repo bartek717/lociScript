@@ -110,7 +110,6 @@ async function image_to_base64(image_file) {
             parent = parent.parentElement;
           }
   
-          // Finally, check if the element is within the viewport
           return isElementInViewport(el);
         }
   
@@ -144,8 +143,8 @@ async function image_to_base64(image_file) {
     .from("products")
     .select("id")
     .eq("productName", product.productName)
-    .order("id", { ascending: true })  // Ensures the smallest (earliest) ID is first
-    .limit(1);  // Limits to the first result only
+    .order("id", { ascending: true })  
+    .limit(1);  
   
     if (queryError) {
       console.error("Error querying product ID from Supabase:", queryError);
@@ -153,9 +152,9 @@ async function image_to_base64(image_file) {
     }
   
     if (queryData && queryData.length > 0) {
-        const firstProductId = queryData[0].id;  // Get the first product's ID
+        const firstProductId = queryData[0].id;  
         console.log("Retrieved Product ID:", firstProductId);
-        return firstProductId;  // Return the retrieved ID
+        return firstProductId;
       } else {
         console.log("No product ID found after insertion.");
         return null;
@@ -190,7 +189,6 @@ async function image_to_base64(image_file) {
         colorways = await page.$$eval('.colorway-container input[type="radio"]', inputs =>
           inputs.map(input => input.value));
     } else if (url === "https://ca.puma.com/ca/en/men/shoes/classics") {
-        // Extracting colorways for Puma
         colorways = await page.$$eval('#style-picker label[data-test-id="color"]', labels =>
             labels.map((label, index) => ({
                 description: label.querySelector('span.sr-only').innerText,
@@ -206,7 +204,6 @@ async function image_to_base64(image_file) {
 
     for (const colorway of colorways) {
         console.log("Selecting colorway: " + colorway.description + " using selector ID: " + colorway.selectorId);
-        // Use the exact data-test-id for clicking
         await page.click(`input[data-test-id="${colorway.selectorId}"]`);
 
       await page.screenshot({

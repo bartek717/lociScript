@@ -167,7 +167,7 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
           if (elementToClick) {
             console.log("Found match for clicking.");
       
-            // Check if the element is in the viewport
+          
             const isVisible = await elementToClick.isIntersectingViewport();
             if (!isVisible) {
               console.log("Element is off-screen, scrolling into view...");
@@ -195,7 +195,7 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
 
           await page.screenshot({
             path: "screenshot.jpg",
-            fullPage: true,  // This tells Puppeteer to capture the entire scrollable page
+            fullPage: true,  
             quality: 100
           });
 
@@ -218,12 +218,12 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
         continue;
       } else if (message_text.includes('{"single":')) {
         try {
-          // Assuming message_text is a properly formatted JSON string
+
           const data = JSON.parse(message_text);
           const { currentProductName, currentProductPrice } = data.single;
           let id;
           console.log("Current Product: " + currentProductName);
-          console.log("Current Product Price: " + currentProductPrice); // Assuming the price already includes the dollar sign
+          console.log("Current Product Price: " + currentProductPrice); 
 
           if (url === "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok") {
             id = await addProductsToSupabase({
@@ -255,13 +255,13 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
         }
       } else if (message_text.includes('{"get_colorways":')) {
         try {
-          // Assuming message_text is a properly formatted JSON string
+
           const data = JSON.parse(message_text);
           const { currentProductName, currentProductPrice } =
             data.get_colorways;
           let id;
           console.log("Current Product: " + currentProductName);
-          console.log("Current Product Price: " + currentProductPrice); // Assuming the price already includes the dollar sign
+          console.log("Current Product Price: " + currentProductPrice);
 
           if (url === "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok") {
             id = await addProductsToSupabase({
