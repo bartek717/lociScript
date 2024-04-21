@@ -17,6 +17,7 @@ const {
 } = require("./helperFunctions.js");
 require("dotenv").config();
 
+
 const supabaseUrl = "https://bntnpmsprmpxshkkigtf.supabase.co";
 const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
