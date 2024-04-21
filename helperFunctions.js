@@ -14,7 +14,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 puppeteer.use(StealthPlugin());
 console.log(process.env.OPENAI_API_KEY)
 const openai = new OpenAI({
-  apiKey: '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'
+  apiKey: ''
 });
 const timeout = 8000;
 
