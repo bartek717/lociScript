@@ -44,7 +44,7 @@ const timeout = 8000;
   const messages = [
     {
       role: "system",
-      content: `You are a website crawler. Your job will be to identify all of the products on a given page, and return the URL to them. The links on the website will be highlighted in red in the screenshot. Always read what is in the screenshot. Don't guess link names.
+      content: `You are a website crawler. Your job will be to identify all of the products on a given page, and return the URL to them. The links on the website will be highlighted in red in the screenshot. Always read what is in the screenshot. Don't guess link names. If you are clicking on a product, put the exact name of the product and dont add anything extra. You can click directly on product names by putting the name of the product, even if it is not highlighted in red. Always click the first product that you have not yet clicked on. Also dont add the type of item you are clicking on to the click (dont add shoes, etc). DO NOT CLICK ON ANY ITEM THAT HAS EXCLUSIVITY (APP ONLY, MEMBERS ONLY, ETC)
 
 You can go to a specific URL by answering with the following JSON format:
 {"url": "url goes here"}
@@ -62,8 +62,8 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
   ];
 
   let urls = [
+    "https://ca.puma.com/ca/en/men/shoes/classics",
     "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok",
-    "https://www.adidas.ca/en/men-shoes",
   ];
 
   let products_scraped = [];
@@ -86,7 +86,8 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
 
         await page.screenshot({
           path: "screenshot.jpg",
-          quality: 100,
+          fullPage: true,  // This tells Puppeteer to capture the entire scrollable page
+          quality: 100
         });
 
         screenshot_taken = true;
@@ -110,7 +111,7 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
             {
               type: "text",
               text: `Here's the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}. If you are on a product page and want to traverse the colorwaves to get their sizes, return {"get_colorways": {"currentProductName": "Product Name", "currentProductPrice": "$ (Product Price)"}}. If there is no colorwaves of the product, return {"single": {"currentProductName": "Product Name", "currentProductPrice": "$ (Product Price)"}}
-              . ${productText}. Continue to scrape the products you have not scraped yet. DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.`,
+              . ${productText}. Continue to scrape the products you have not scraped yet. DI  DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.,DO NOT CLICK ON ANY ITEM THAT HAS EXCLUSIVITY (APP ONLY, MEMBERS ONLY, ETC)`
             },
           ],
         });
@@ -138,45 +139,54 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
         let parts = message_text.split('{"click": "');
         parts = parts[1].split('"}');
         const link_text = parts[0].replace(/[^a-zA-Z0-9 ]/g, "");
-
+      
         console.log("Clicking on " + link_text);
-
+      
         try {
           const elements = await page.$$("[gpt-link-text]");
           let partial;
           let exact;
-
+      
           for (const element of elements) {
             const attributeValue = await page.evaluate(
-              (el) => el.getAttribute("gpt-link-text"),
+              el => el.getAttribute("gpt-link-text"),
               element
             );
-
+      
             if (attributeValue.includes(link_text)) {
               partial = element;
             }
-
+      
             if (attributeValue === link_text) {
               exact = element;
             }
           }
-
-          if (exact || partial) {
+      
+          const elementToClick = exact || partial;
+          if (elementToClick) {
             console.log("Found match for clicking.");
-            const elementToClick = exact || partial;
+      
+            // Check if the element is in the viewport
+            const isVisible = await elementToClick.isIntersectingViewport();
+            if (!isVisible) {
+              console.log("Element is off-screen, scrolling into view...");
+              await elementToClick.scrollIntoViewIfNeeded();
+            }
+      
             await elementToClick.click();
-
+      
             try {
               await page.waitForNavigation({
-                waitUntil: "load",
+                waitUntil: "networkidle0",
                 timeout: 20000,
               });
             } catch (error) {
               console.error("Navigation failed after clicking:", error);
             }
           } else {
-            throw new Error("Can't find link");
+            throw new Error("Can't find link with text: " + link_text);
           }
+        
 
           await Promise.race([waitForEvent(page, "load"), sleep(timeout)]);
 
@@ -184,7 +194,8 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
 
           await page.screenshot({
             path: "screenshot.jpg",
-            quality: 100,
+            fullPage: true,  // This tells Puppeteer to capture the entire scrollable page
+            quality: 100
           });
 
           screenshot_taken = true;
@@ -219,7 +230,15 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
               productName: currentProductName,
               price: currentProductPrice.replace("$", ""),
             });
+          }else if (url === "https://ca.puma.com/ca/en/men/shoes/classics") {
+            id = await addProductsToSupabase({
+              company: "puma",
+              productName: currentProductName,
+              price: currentProductPrice.replace("$", ""),
+            });
           }
+          console.log("the id is")
+          console.log(id)
           if (id) {
             await getSingleSize(messages, page, id);
             await page.goto(url);
@@ -249,9 +268,17 @@ DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
               productName: currentProductName,
               price: currentProductPrice.replace("$", ""),
             });
+          }else if (url === "https://ca.puma.com/ca/en/men/shoes/classics") {
+            id = await addProductsToSupabase({
+              company: "puma",
+              productName: currentProductName,
+              price: currentProductPrice.replace("$", ""),
+            });
           }
+          console.log("before getting colorways")
           if (id) {
-            await getColorways(messages, page, id);
+            console.log("getting colorways")
+            await getColorways(messages, page, id, url);
             await page.goto(url);
             products_scraped.push(
               `${currentProductName} at ${currentProductPrice}`

@@ -1,2 +1,2 @@
 
-        useUrl = parts[0];
+              price: currentProductPrice.replace("$", ""),

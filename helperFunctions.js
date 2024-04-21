@@ -14,7 +14,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 puppeteer.use(StealthPlugin());
 console.log(process.env.OPENAI_API_KEY)
 const openai = new OpenAI({
-  apiKey: ''
+  apiKey: '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'
 });
 const timeout = 8000;
 
@@ -183,15 +183,32 @@ async function image_to_base64(image_file) {
     }, event);
   }
   
-  async function getColorways(messages, page, id){
-    const colorways = await page.$$eval('.colorway-container input[type="radio"]', inputs => inputs.map(input => input.value));
+  async function getColorways(messages, page, id, url) {
+    console.log(url);
+    let colorways;
+    if (url === "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok") {
+        colorways = await page.$$eval('.colorway-container input[type="radio"]', inputs =>
+          inputs.map(input => input.value));
+    } else if (url === "https://ca.puma.com/ca/en/men/shoes/classics") {
+        // Extracting colorways for Puma
+        colorways = await page.$$eval('#style-picker label[data-test-id="color"]', labels =>
+            labels.map((label, index) => ({
+                description: label.querySelector('span.sr-only').innerText,
+                selectorId: `color-selector-${index}`
+            }))
+        );
+    }
+
     const productId = id;
     console.log("THE PRODUCT ID IS");
     console.log(productId);
+    console.log(colorways);
+
     for (const colorway of colorways) {
-      console.log("Selecting colorway: " + colorway);
-      await page.click(`input[value="${colorway}"]`);
-  
+        console.log("Selecting colorway: " + colorway.description + " using selector ID: " + colorway.selectorId);
+        // Use the exact data-test-id for clicking
+        await page.click(`input[data-test-id="${colorway.selectorId}"]`);
+
       await page.screenshot({
         path: "screenshot.jpg",
         quality: 100,
