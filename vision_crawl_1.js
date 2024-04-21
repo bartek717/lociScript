@@ -4,6 +4,17 @@ const OpenAI = require("openai");
 const readline = require("readline");
 const fs = require("fs");
 const { createClient } = require("@supabase/supabase-js");
+const {
+  extractImagesInfo,
+  getColorways,
+  waitForEvent,
+  addProductsToSupabase,
+  addSubProductsToSupabase,
+  highlight_links,
+  sleep,
+  image_to_base64,
+  getSingleSize,
+} = require("./helperFunctions.js");
 require("dotenv").config();
 
 const supabaseUrl = "https://bntnpmsprmpxshkkigtf.supabase.co";
@@ -11,186 +22,11 @@ const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 puppeteer.use(StealthPlugin());
-console.log(process.env.OPENAI_API_KEY)
+console.log(process.env.OPENAI_API_KEY);
 const openai = new OpenAI({
-  apiKey: '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'
+  apiKey: "",
 });
 const timeout = 8000;
-
-async function image_to_base64(image_file) {
-  return await new Promise((resolve, reject) => {
-    fs.readFile(image_file, (err, data) => {
-      if (err) {
-        console.error("Error reading the file:", err);
-        reject();
-        return;
-      }
-
-      const base64Data = data.toString("base64");
-      const dataURI = `data:image/jpeg;base64,${base64Data}`;
-      resolve(dataURI);
-    });
-  });
-}
-
-async function extractImagesInfo(page) {
-  return await page.evaluate(() => {
-    const images = document.querySelectorAll("img");
-    return Array.from(images).map((img) => ({
-      src: img.src,
-      alt: img.alt,
-      width: img.width,
-      height: img.height,
-    }));
-  });
-}
-
-async function sleep(milliseconds) {
-  return await new Promise((r, _) => {
-    setTimeout(() => {
-      r();
-    }, milliseconds);
-  });
-}
-
-async function highlight_links(page) {
-  await page.evaluate(() => {
-    document.querySelectorAll("[gpt-link-text]").forEach((e) => {
-      e.removeAttribute("gpt-link-text");
-    });
-  });
-
-  const elements = await page.$$(
-    "a, button, input, textarea, [role=button], [role=treeitem]"
-  );
-
-  elements.forEach(async (e) => {
-    await page.evaluate((e) => {
-      function isElementVisible(el) {
-        if (!el) return false; // Element does not exist
-
-        function isStyleVisible(el) {
-          const style = window.getComputedStyle(el);
-          return (
-            style.width !== "0" &&
-            style.height !== "0" &&
-            style.opacity !== "0" &&
-            style.display !== "none" &&
-            style.visibility !== "hidden"
-          );
-        }
-
-        function isElementInViewport(el) {
-          const rect = el.getBoundingClientRect();
-          return (
-            rect.top >= 0 &&
-            rect.left >= 0 &&
-            rect.bottom <=
-              (window.innerHeight || document.documentElement.clientHeight) &&
-            rect.right <=
-              (window.innerWidth || document.documentElement.clientWidth)
-          );
-        }
-
-        // Check if the element is visible style-wise
-        if (!isStyleVisible(el)) {
-          return false;
-        }
-
-        // Traverse up the DOM and check if any ancestor element is hidden
-        let parent = el;
-        while (parent) {
-          if (!isStyleVisible(parent)) {
-            return false;
-          }
-          parent = parent.parentElement;
-        }
-
-        // Finally, check if the element is within the viewport
-        return isElementInViewport(el);
-      }
-
-      e.style.border = "1px solid red";
-
-      const position = e.getBoundingClientRect();
-
-      if (position.width > 5 && position.height > 5 && isElementVisible(e)) {
-        const link_text = e.textContent.replace(/[^a-zA-Z0-9 ]/g, "");
-        e.setAttribute("gpt-link-text", link_text);
-      }
-    }, e);
-  });
-}
-
-async function addProductsToSupabase(products) {
-  const { data, error } = await supabase.from("products").insert(products);
-
-  if (error) {
-    console.error("Error inserting products into Supabase:");
-  } else {
-    console.log("Successfully added products to Supabase:");
-  }
-}
-
-async function waitForEvent(page, event) {
-  return page.evaluate((event) => {
-    return new Promise((r, _) => {
-      document.addEventListener(event, function (e) {
-        r();
-      });
-    });
-  }, event);
-}
-
-async function getColorways(messages, page){
-  const colorways = await page.$$eval('.colorway-container input[type="radio"]', inputs => inputs.map(input => input.value));
-
-  for (const colorway of colorways) {
-    console.log("Selecting colorway: " + colorway);
-    await page.click(`input[value="${colorway}"]`);
-
-    await page.screenshot({
-      path: "screenshot.jpg",
-      quality: 100,
-    });
-
-    
-    const base64_image = await image_to_base64("screenshot.jpg");
-    messages.push({
-      role: "user",
-      content: [
-        {
-          type: "image_url",
-          image_url: base64_image,
-        },
-        {
-          type: "text",
-          text: 'Here\'s the screenshot of the website you are on right now. Get the sizes of the current product page you are on.  Simply return the numbers like the following example: {3, 4, 7, 11, 11.5, 12.5, 13}',
-        },
-      ],
-    });
-    
-    const response = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
-      max_tokens: 1024,
-      messages: messages,
-    });
-
-    const message = response.choices[0].message;
-    const message_text = message.content;
-    console.log("SIZES FOR THE COLORWAY " + colorway)
-    console.log(message_text)
-
-    setTimeout(() => {
-      console.log("sleep");
-    }, 2000);
-    messages.pop()
-  }
-}
-
-async function click(page, command){
-
-}
 
 (async () => {
   const browser = await puppeteer.launch({
@@ -218,8 +54,9 @@ You can click links on the website by referencing the text inside of the link/bu
 
 Ensure that you click on all of the products in order to ensure that you know all of the sizes for each color scheme. Do not ask me if you should click on them, just click on them. Make sure that you only specify a single line of text, ex. "Nike Dunk Low Metro". 
 
-For Nike, once you are on the products screen, click on each colorway. Do this by returning {get_colorways, "currentProductName"}, where "currentProductName" is the current product page we are on.
+For Nike, once you are on the products screen, click on each colorway. Do this by returning {"get_colorways": {"currentProductName": "Product Name", "currentProductPrice": "$ (Product Price)"}}, where "currentProductName" is the current product page we are on, and "currentProductPrice" is the price of the current product we are on.
 Do not click on any size guides.
+DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.
         `,
     },
   ];
@@ -258,7 +95,11 @@ Do not click on any size guides.
 
       if (screenshot_taken) {
         const base64_image = await image_to_base64("screenshot.jpg");
-        let productText = products_scraped.length > 0 ? "You have already scraped the following products: " + products_scraped.join(", ") : "No products have been scraped yet.";
+        let productText =
+          products_scraped.length > 0
+            ? "You have already scraped the following products: " +
+              products_scraped.join(", ")
+            : "No products have been scraped yet.";
         messages.push({
           role: "user",
           content: [
@@ -268,7 +109,8 @@ Do not click on any size guides.
             },
             {
               type: "text",
-              text: `Here's the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}. If you are on a product page and want to traverse the colorwaves to get their sizes, return {get_colorways, "currentProductName"}. ${productText}. Continue to scrape the products you have not scraped yet.`,
+              text: `Here's the screenshot of the website you are on right now. You can click on links with {"click": "Link text"}. If you are on a product page and want to traverse the colorwaves to get their sizes, return {"get_colorways": {"currentProductName": "Product Name", "currentProductPrice": "$ (Product Price)"}}. If there is no colorwaves of the product, return {"single": {"currentProductName": "Product Name", "currentProductPrice": "$ (Product Price)"}}
+              . ${productText}. Continue to scrape the products you have not scraped yet. DO NOT REURN ANYTHING BUT THE JSON FOR THE ACTION YOU WOULD LIKE TO TAKE.`,
             },
           ],
         });
@@ -323,9 +165,12 @@ Do not click on any size guides.
             console.log("Found match for clicking.");
             const elementToClick = exact || partial;
             await elementToClick.click();
-      
+
             try {
-              await page.waitForNavigation({ waitUntil: "load", timeout: 20000 });
+              await page.waitForNavigation({
+                waitUntil: "load",
+                timeout: 20000,
+              });
             } catch (error) {
               console.error("Navigation failed after clicking:", error);
             }
@@ -359,23 +204,68 @@ Do not click on any size guides.
         useUrl = parts[0];
 
         continue;
-      } else if (message_text.indexOf('{get_colorways,') !== -1) {
-        const match = message_text.match(/\{get_colorways, "(.*?)"\}/);
-        if (match && match[1]) {
-          const currentProductName = match[1];
+      } else if (message_text.includes('{"single":')) {
+        try {
+          // Assuming message_text is a properly formatted JSON string
+          const data = JSON.parse(message_text);
+          const { currentProductName, currentProductPrice } = data.single;
+          let id;
           console.log("Current Product: " + currentProductName);
-          await getColorways(messages, page);
-          await page.goto(url);
-          products_scraped.push(currentProductName);
-          console.log("Scraped Products: " + products_scraped.join(", "));
-          screenshot_taken = false;  
-          useUrl = url;
-        } else {
-          console.log("Error: Product name could not be extracted");
-        }
+          console.log("Current Product Price: " + currentProductPrice); // Assuming the price already includes the dollar sign
 
-        continue;
+          if (url === "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok") {
+            id = await addProductsToSupabase({
+              company: "nike",
+              productName: currentProductName,
+              price: currentProductPrice.replace("$", ""),
+            });
+          }
+          if (id) {
+            await getSingleSize(messages, page, id);
+            await page.goto(url);
+            products_scraped.push(
+              `${currentProductName} at ${currentProductPrice}`
+            );
+            console.log("Scraped Products: " + products_scraped.join(", "));
+            screenshot_taken = false;
+            useUrl = url;
+          }
+        } catch (error) {
+          console.log("Error parsing product details:", error);
+        }
+      } else if (message_text.includes('{"get_colorways":')) {
+        try {
+          // Assuming message_text is a properly formatted JSON string
+          const data = JSON.parse(message_text);
+          const { currentProductName, currentProductPrice } =
+            data.get_colorways;
+          let id;
+          console.log("Current Product: " + currentProductName);
+          console.log("Current Product Price: " + currentProductPrice); // Assuming the price already includes the dollar sign
+
+          if (url === "https://www.nike.com/ca/w/mens-shoes-nik1zy7ok") {
+            id = await addProductsToSupabase({
+              company: "nike",
+              productName: currentProductName,
+              price: currentProductPrice.replace("$", ""),
+            });
+          }
+          if (id) {
+            await getColorways(messages, page, id);
+            await page.goto(url);
+            products_scraped.push(
+              `${currentProductName} at ${currentProductPrice}`
+            );
+            console.log("Scraped Products: " + products_scraped.join(", "));
+            screenshot_taken = false;
+            useUrl = url;
+          }
+        } catch (error) {
+          console.log("Error parsing product details:", error);
+        }
       }
+
+      continue;
     }
   }
 })();

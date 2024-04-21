@@ -1,2 +1,2 @@
 
-      const message = response.choices[0].message;
+        useUrl = parts[0];
